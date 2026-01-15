@@ -219,3 +219,64 @@ conda run -n kuavo_il python main.py
 - 类别数：`NUM_CLASSES`；
 - 训练步数和 batch 大小：`MAX_STEPS`、`BATCH_SIZE` 等。
 
+---
+
+## 测试与开发
+
+### Mock 数据测试
+
+项目包含测试脚本 [test_with_mock_data.py](./test_with_mock_data.py)，可用于测试代码结构而无需完整依赖：
+
+```bash
+# 基础测试（检查代码结构）
+python test_with_mock_data.py
+
+# 完整测试（需要安装依赖）
+RUN_FULL_TEST=true python test_with_mock_data.py
+```
+
+测试脚本包含：
+- ✅ 数据集加载测试
+- ✅ Collate 函数测试
+- ✅ 模型前向传播测试
+- ✅ 完整训练流程测试（可选）
+
+### 代码优化
+
+代码已进行优化，主要改进：
+
+- **类型安全**：添加了完整的类型提示（Type Hints），使用 `Optional` 和 `Union` 明确可选类型
+- **代码可维护性**：添加了详细的文档字符串，改进了变量命名，提取了重复逻辑为独立方法
+- **训练稳定性**：添加了梯度裁剪（`max_norm=1.0`）防止梯度爆炸
+- **日志输出**：改进了训练日志格式，更清晰地显示训练进度
+
+主要特性：
+- 支持 LoRA 和全参数微调
+- 自动推断 hidden_size
+- 梯度裁剪防止训练不稳定
+- 清晰的训练日志输出
+
+---
+
+## 依赖要求
+
+完整功能需要以下依赖：
+
+- `torch` - PyTorch 深度学习框架
+- `transformers` - Hugging Face Transformers
+- `qwen-vl-utils` - Qwen VL 工具包
+- `lerobot` - LeRobot 数据集库
+- `peft` - Parameter-Efficient Fine-Tuning
+- `PIL` / `Pillow` - 图像处理
+- `numpy` - 数值计算
+
+---
+
+## 未来改进方向
+
+1. **添加验证集评估**：在训练过程中评估验证集性能
+2. **支持混合精度训练**：使用 `torch.cuda.amp` 加速训练
+3. **添加 TensorBoard 日志**：可视化训练过程
+4. **支持分布式训练**：使用 `torch.distributed` 进行多 GPU 训练
+5. **添加数据增强**：图像翻转、颜色抖动等
+6. **添加早停机制**：基于验证集性能自动停止训练

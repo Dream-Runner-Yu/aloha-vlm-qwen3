@@ -12,9 +12,17 @@ import os
 
 
 def train_qwen3vl_reward_classifier(ds: LeRobotDataset):
+    """
+    训练 Qwen3-VL reward 分类器
+    
+    Args:
+        ds: LeRobot 数据集对象
+    """
     if ds is None:
         print("Dataset is None, skip training.")
         return
+    
+    # 推断类别数
     hf_ds = getattr(ds, "hf_dataset", None)
     if hf_ds is None:
         hf_ds = getattr(ds, "dataset", None)
@@ -24,58 +32,96 @@ def train_qwen3vl_reward_classifier(ds: LeRobotDataset):
         num_bins = reward_bins.shape[0]
     else:
         num_bins = len(reward_bins)
-    print("num reward bins:", num_bins)
+    print(f"Detected {num_bins} reward bins")
+    
+    # 配置训练参数
     max_samples_str = os.environ.get("MAX_TRAIN_SAMPLES", "")
     if max_samples_str and max_samples_str != "-1":
         max_samples = int(max_samples_str)
     else:
         max_samples = None
+    
     print(f"Training with max_samples={max_samples} (None means all)")
+    
+    # 创建数据集和数据加载器
     dataset = AlohaRewardDataset(ds, max_samples=max_samples)
     model_name = os.environ.get("QWEN3VL_MODEL", "Qwen/Qwen3-VL-2B-Instruct")
     processor = AutoProcessor.from_pretrained(model_name)
     collate_fn = make_vl_collate_fn(processor)
     batch_size = int(os.environ.get("BATCH_SIZE", "2"))
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    dataloader = DataLoader(
+        dataset, 
+        batch_size=batch_size, 
+        shuffle=True, 
+        collate_fn=collate_fn,
+        num_workers=0,
+    )
+    
+    # 创建模型
+    print(f"Initializing model: {model_name}")
     model = Qwen3VLRewardClassifier(model_name, num_bins)
     device = next(model.parameters()).device
+    print(f"Model device: {device}")
+    
+    # 配置优化器
     lr = float(os.environ.get("LR", "1e-4"))
     epochs = int(os.environ.get("EPOCHS", "10"))
     max_steps = int(os.environ.get("MAX_STEPS", "50"))
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    print(f"Optimizer: AdamW(lr={lr})")
+    print(f"Training config: epochs={epochs}, max_steps={max_steps}")
+    
+    # 训练循环
     step = 0
     model.train()
     for epoch in range(epochs):
+        print(f"\n=== Epoch {epoch + 1}/{epochs} ===")
         for enc, labels in dataloader:
+            # 移动数据到设备
             for k in enc:
-                enc[k] = enc[k].to(device)
+                if isinstance(enc[k], torch.Tensor):
+                    enc[k] = enc[k].to(device)
             labels = labels.to(device)
+            
+            # 前向传播
             logits = model(enc)
             loss = nn.functional.cross_entropy(logits, labels)
+            
+            # 反向传播
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             step += 1
+            
+            # 打印训练信息
             if step % 5 == 0:
                 preds = logits.argmax(dim=-1)
                 acc = (preds == labels).float().mean().item()
-                print("step", step, "loss", float(loss.item()), "acc", float(acc))
+                print(f"Step {step:4d} | Loss: {loss.item():.4f} | Acc: {acc:.4f}")
+            
             if step >= max_steps:
                 break
+        
         if step >= max_steps:
             break
-    print("training finished, total steps:", step)
+    
+    print(f"\nTraining finished! Total steps: {step}")
+    
+    # 保存模型
     base_dir = os.path.dirname(os.path.abspath(__file__))
     cfg_dir = os.environ.get("CKPT_DIR", "checkpoints/qwen3_reward")
     if not os.path.isabs(cfg_dir):
         save_dir = os.path.join(base_dir, cfg_dir)
     else:
         save_dir = cfg_dir
+    
+    print(f"\nSaving checkpoint to: {save_dir}")
     os.makedirs(save_dir, exist_ok=True)
     model.base_model.save_pretrained(save_dir)
     processor.save_pretrained(save_dir)
     torch.save(model.classifier.state_dict(), os.path.join(save_dir, "classifier.pt"))
-    print("saved checkpoint to", save_dir)
+    print(f"Checkpoint saved successfully to {save_dir}")
 
 
 def chat_qwen3vl():
