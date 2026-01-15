@@ -1,5 +1,6 @@
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from transformers import AutoProcessor
+from qwen_vl_utils import process_vision_info
 
 from torch.utils.data import Dataset
 from PIL import Image
@@ -58,9 +59,47 @@ class AlohaRewardDataset(Dataset):
 
 def make_vl_collate_fn(processor: AutoProcessor):
     def collate(batch):
-        texts = [b["text"] for b in batch]
         labels = torch.tensor([b["label"] for b in batch], dtype=torch.long)
-        enc = processor(text=texts, return_tensors="pt", padding=True)
+        texts = []
+        image_inputs = []
+        for sample in batch:
+            text = sample["text"]
+            images = sample["images"]
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": text,
+                        },
+                    ]
+                }
+            ]
+            for img in images:
+                messages[0]["content"].insert(
+                    0,
+                    {
+                        "type": "image",
+                        "image": img,
+                        "resized_height": 280,
+                        "resized_width": 280,
+                    },
+                )
+            chat_text = processor.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+            img_inputs, _ = process_vision_info(messages)
+            texts.append(chat_text)
+            image_inputs.append(img_inputs)
+        enc = processor(
+            text=texts,
+            images=image_inputs,
+            padding=True,
+            return_tensors="pt",
+        )
         return enc, labels
 
     return collate

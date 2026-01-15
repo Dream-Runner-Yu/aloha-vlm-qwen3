@@ -3,6 +3,7 @@ from transformers import Qwen3VLForConditionalGeneration
 from peft import LoraConfig, get_peft_model
 import torch
 import torch.nn as nn
+import os
 
 
 class Qwen3VLRewardClassifier(nn.Module):
@@ -14,35 +15,37 @@ class Qwen3VLRewardClassifier(nn.Module):
             device_map="auto",
         )
         print(self.base_model)
-        
-        # Determine hidden_size
+
         if hasattr(self.base_model.config, "hidden_size"):
             hidden_size = self.base_model.config.hidden_size
         elif hasattr(self.base_model.config, "text_config") and hasattr(self.base_model.config.text_config, "hidden_size"):
             hidden_size = self.base_model.config.text_config.hidden_size
         else:
-            # Fallback for Qwen3-VL-2B if config structure is different
             hidden_size = 2048 
             print(f"Warning: Could not determine hidden_size from config. Using default {hidden_size}.")
-            
-        target_modules = [
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ]
-        peft_config = LoraConfig(
-            r=lora_r,
-            lora_alpha=lora_alpha,
-            target_modules=target_modules,
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM",
-        )
-        self.base_model = get_peft_model(self.base_model, peft_config)
+
+        mode = os.environ.get("FINETUNE_MODE", "lora").lower()
+        use_lora = mode != "full"
+
+        if use_lora:
+            target_modules = [
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ]
+            peft_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                target_modules=target_modules,
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM",
+            )
+            self.base_model = get_peft_model(self.base_model, peft_config)
         device = next(self.base_model.parameters()).device
         self.classifier = nn.Linear(hidden_size, num_classes, dtype=torch.bfloat16).to(device)
 
@@ -67,3 +70,4 @@ if __name__ == "__main__":
     print(f"Loading Qwen3VLRewardClassifier(model_name={model_name}, num_classes={num_classes})")
     model = Qwen3VLRewardClassifier(model_name=model_name, num_classes=num_classes)
     print(model)
+

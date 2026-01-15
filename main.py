@@ -65,7 +65,12 @@ def train_qwen3vl_reward_classifier(ds: LeRobotDataset):
         if step >= max_steps:
             break
     print("training finished, total steps:", step)
-    save_dir = os.environ.get("CKPT_DIR", "checkpoints/qwen3_reward")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    cfg_dir = os.environ.get("CKPT_DIR", "checkpoints/qwen3_reward")
+    if not os.path.isabs(cfg_dir):
+        save_dir = os.path.join(base_dir, cfg_dir)
+    else:
+        save_dir = cfg_dir
     os.makedirs(save_dir, exist_ok=True)
     model.base_model.save_pretrained(save_dir)
     processor.save_pretrained(save_dir)
@@ -75,13 +80,28 @@ def train_qwen3vl_reward_classifier(ds: LeRobotDataset):
 
 def chat_qwen3vl():
     model_name = os.environ.get("QWEN3VL_MODEL", "Qwen/Qwen3-VL-2B-Instruct")
-    ckpt_dir = os.environ.get("CKPT_DIR", "checkpoints/qwen3_reward")
-    base = Qwen3VLForConditionalGeneration.from_pretrained(
-        model_name,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
-    )
-    model = PeftModel.from_pretrained(base, ckpt_dir)
+    cfg_dir = os.environ.get("CKPT_DIR", "checkpoints/qwen3_reward")
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    if not os.path.isabs(cfg_dir):
+        ckpt_dir = os.path.join(base_dir, cfg_dir)
+    else:
+        ckpt_dir = cfg_dir
+    if not os.path.isdir(ckpt_dir):
+        raise OSError(f"Checkpoint directory not found: {ckpt_dir}. Please run training first with CKPT_DIR set to this path.")
+    mode = os.environ.get("FINETUNE_MODE", "lora").lower()
+    if mode == "full":
+        model = Qwen3VLForConditionalGeneration.from_pretrained(
+            ckpt_dir,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+        )
+    else:
+        base = Qwen3VLForConditionalGeneration.from_pretrained(
+            model_name,
+            torch_dtype=torch.bfloat16,
+            device_map="auto",
+        )
+        model = PeftModel.from_pretrained(base, ckpt_dir)
     processor = AutoProcessor.from_pretrained(ckpt_dir)
     model.eval()
     while True:
@@ -143,5 +163,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
