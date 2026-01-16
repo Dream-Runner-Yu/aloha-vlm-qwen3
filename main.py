@@ -26,6 +26,8 @@ def train_qwen3vl_reward_classifier(ds: LeRobotDataset):
     hf_ds = getattr(ds, "hf_dataset", None)
     if hf_ds is None:
         hf_ds = getattr(ds, "dataset", None)
+    if hf_ds is None:
+        raise ValueError("Cannot find dataset attribute in LeRobotDataset")
     first_row = hf_ds[0]
     reward_bins = first_row["reward_bins"]
     if hasattr(reward_bins, "shape"):
@@ -173,7 +175,11 @@ def chat_qwen3vl():
             add_generation_prompt=True,
             return_tensors="pt",
         )
-        inputs = inputs.to(model.device)
+        # 将输入移动到模型设备
+        if isinstance(inputs, dict):
+            inputs = {k: v.to(model.device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+        else:
+            inputs = inputs.to(model.device)
         outputs = model.generate(**inputs, max_new_tokens=128)
         gen_ids = []
         for in_ids, out_ids in zip(inputs["input_ids"], outputs):

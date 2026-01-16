@@ -73,6 +73,9 @@ class AlohaRewardDataset(Dataset):
                     # 灰度图
                     img = (img.detach().cpu().numpy() * 255).astype(np.uint8)
                     img = Image.fromarray(img, mode='L')
+            elif not isinstance(img, Image.Image):
+                # 如果既不是 Tensor 也不是 PIL.Image，尝试转换
+                raise TypeError(f"Unsupported image type: {type(img)} for camera {cam}. Expected torch.Tensor or PIL.Image.")
             
             images.append(img)
         
